@@ -1,48 +1,31 @@
 import numpy as np
-import cv2
-from matplotlib import pyplot as plt
+import cv2 as cv
+import matplotlib.pyplot as plt
+img1 = cv.imread('test/test1.jpg',cv.IMREAD_GRAYSCALE)          # queryImage
+img2 = cv.imread('test/test2.jpg',cv.IMREAD_GRAYSCALE) # trainImage
+# Initiate SIFT detector
+sift = cv.xfeatures2d.SIFT_create()
+# find the keypoints and descriptors with SIFT
+kp1, des1 = sift.detectAndCompute(img1,None)
+kp2, des2 = sift.detectAndCompute(img2,None)
+# FLANN parameters
+FLANN_INDEX_KDTREE = 1
+index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+search_params = dict(checks=50)   # or pass empty dictionary
+flann = cv.FlannBasedMatcher(index_params,search_params)
 
-imagenes = []
-kp = []
-dc = []
-keypoint = []
-punto = []
+matches = flann.knnMatch(des1,des2,k=2)
 
-#Cargo las fotos
-for i in range(48):
-    nombre = "train/frontal_"+str(i+1)+".jpg"
-    img = cv2.imread(nombre, 0)
-    imagenes.append(img)
-
-sift = cv2.xfeatures2d.SIFT_create()
-
-#Saco los keypoints y los descriptores de cada imagen y los almaceno
-for i in range(48):
-    kp1, des1 = sift.detectAndCompute(imagenes[i], None)
-    kp.append(kp1)
-    dc.append(des1)
-
-#Relleno el vector de votacion
-for i in kp:
-    for j in i:
-        keypoint.append(j)
-        punto.append(j.pt)
-
-
-
-FLANN_INDEX_LSH = 6
-index_params= dict(algorithm=FLANN_INDEX_LSH,table_number=6,key_size=3,multi_probe_level=1)
-search_params = dict(checks=-1) # Número máximo de hojas a visitar cuando se busca vecinos
-flann = cv2.FlannBasedMatcher(index_params,search_params)
-
-for d in dc:
-    flann.add([d])
-
-results = flann.knnMatch(np.array([[8,8,8]],dtype=np.uint8),k=3)
-flann.kn
-
-
-
-for r in results:
-  for m in r:
-    print("Dist:",m.distance," img:",m.imgIdx," queryIdx:", m.queryIdx," trainIdx:",m.trainIdx)
+# Need to draw only good matches, so create a mask
+matchesMask = [[0,0] for i in range(len(matches))]
+# ratio test as per Lowe's paper
+for i,(m,n) in enumerate(matches):
+    if m.distance < 0.7*n.distance:
+        matchesMask[i]=[1,0]
+draw_params = dict(matchColor = (0,255,0),
+                   singlePointColor = (255,0,0),
+                   matchesMask = matchesMask,
+                   flags = cv.DrawMatchesFlags_DEFAULT)
+img3 = cv.drawMatchesKnn(img1,kp1,img2,kp2,matches,None,**draw_params)
+plt.imshow(img3,)
+plt.show()
