@@ -2,7 +2,7 @@
 <opencv_storage>
 <haarcascade type_id="opencv-haar-classifier">
   <size>
-    35 15</size>
+    15 35</size>
   <stages>
     <_>
       <!-- stage 0 -->
