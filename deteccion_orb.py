@@ -1,78 +1,112 @@
 import numpy as np
 import cv2
-from matplotlib import pyplot as plt
-imagenes = []
-kpTrain = []
-dcTrain = []
-kpTest = []
-dcTest = []
-keypoint = []
-punto = []
+import math
 
-sift = cv2.xfeatures2d.SIFT_create()
+def maximo(g, m, n):
+    max = 0
+    b = 0
+    v = 0
+    for i in range(m):
+        for j in range(n):
+            if g[i][j] > max:
+                b=i
+                v=j
+                max=g[i][j]
+    return (b,v)
 
-#Cargo las fotos TRAIN
-for t in range(48):
-    nombre = "train/frontal_" + str(t + 1) + ".jpg"
+keypoints = []
+centro = []
+angulo = []
+descriptor = []
+orientacion = []
+escala = []
+keypoints2 = []
+keypoints3 = []
+descriptor2=[]
+
+sift = sift = cv2.ORB_create(100, 1.3, 4, 31, 0, 2, cv2.ORB_HARRIS_SCORE, 31, 20)
+
+#Imagenes de train
+for i in range(48):
+    nombre = "train/frontal_" + str(i + 1) + ".jpg"
     img = cv2.imread(nombre, 0)
 
-    # Saco los keypoints y los descriptores de cada imagen y los almaceno
     kp1, des1 = sift.detectAndCompute(img, None)
-    kpTrain.append(kp1)
-    dcTrain.append(des1)
 
-    FLANN_INDEX_LSH = 5
-    index_params = dict(algorithm=FLANN_INDEX_LSH, table_number=6, key_size=3, multi_probe_level=1)
-    search_params = dict(checks=-1)  # Número máximo de hojas a visitar cuando se busca vecinos
-    flann = cv2.FlannBasedMatcher(index_params, search_params)
+    width2, height2 = img.shape[:2]
+    cen = (int(width2/2), int(height2/2))
 
-    flann.add([des1])
+    #Almaceno todos los datos de todas las imagenes para crear el entrenamiento
+    longitud1 = len(kp1)
+    for j in range(longitud1):
+        keypoints.append(kp1[j])
+        descriptor.append(des1[j])
+        orientacion.append(kp1[j].angle)
+        escala.append(kp1[j].size)
+        restax = kp1[j].pt[0] - cen[0]
+        restay = kp1[j].pt[1] - cen[1]
+        n1 = math.pow(restax, 2)
+        n2 = math.pow(restay, 2)
+        num = math.sqrt(n1+n2)
+        centro.append(num)
+        res = restay / num
+        ang=math.asin(res)
+        resul = math.degrees(ang)
+        angulo.append(resul)
 
+bf = cv2.BFMatcher()
 
-#Cargo las fotos TEST
-for h in range(33):
-    mejores = []
-    nombre = "test/test"+str(h+1)+".jpg"
+#Trabajo sobre las imagenes de test
+for k in range(33):
+    nombre = "test/test" + str(k + 1) + ".jpg"
     img = cv2.imread(nombre, 0)
-    imagenes.append(img)
+
+    keypoints3 = []
+    width, height = img.shape[:2]
+    a = np.zeros((int(width), int(height)))
 
     kp2, des2 = sift.detectAndCompute(img, None)
-    kpTest.append(kp2)
-    dcTest.append(des2)
-    matches=[]
-    matches = flann.knnMatch(des2, k=2)
 
-    good = []
-    for m, n in matches:
-        if m.distance < 0.75 * n.distance:
-            good.append([m])
+    longitud2 = len(kp2)
+    for l in range(longitud2):
+        keypoints2.append(kp2[l])
+        descriptor2.append(des2[l])
+    matches = bf.knnMatch(np.asarray(des2,), np.asarray(descriptor,), k=3)
 
-    for p in good:
-        indice1 = p[0].queryIdx
-        keypoint1 = kpTest[h][indice1]
-        mejores.append(keypoint1)
+    #Relleno el vector de acumulacion a en las coordenadas que aparecen en el entrenamiento /10 para que no se salgan los puntos (ya que el vector tambien esta /10)
+    for m in matches:
+        for n in range(len(m)):
+            pos2 = m[n].queryIdx
+            #Posicion training
+            pos1 = m[n].trainIdx
+            keypoints3.append(keypoints[pos1])
+            kp=keypoints[pos1]
+            escala2 = int(escala[pos2])
+            escala1 = int(escala[pos1])
+            anguloTrain = angulo[pos1]
+            #Saco el punto del keypoint del entrenamiento
+            x = keypoints[pos1].pt[0]
+            y = keypoints[pos1].pt[1]
+            x = x+(escala2/escala1)*centro[pos1]
+            y = y+(escala2/escala1)*centro[pos1]
 
-    edges_img = cv2.Canny(img, 50, 150, apertureSize=3)
-    # resolución de rho, theta y número de puntos mínimo para considerar recta
-    lines = cv2.HoughLines(edges_img, 1, np.pi / 180, 100)
-    color = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+            #Saco el angulo correspondiente al modulo del vector que va del KP al centro
+            an=(kp.angle+anguloTrain+keypoints2[pos2].angle)
+            if an > 180:
+                an = (an -180)*(-1)
+            elif an < -180:
+                an = (an +180)*(-1)
 
-    for line in lines:
-        rho, theta = line[0]
-        a = np.cos(theta)
-        b = np.sin(theta)
-        x0 = a * rho
-        y0 = b * rho
-        x1 = int(x0 + 1000 * (-b))
-        y1 = int(y0 + 1000 * (a))
-        x2 = int(x0 - 1000 * (-b))
-        y2 = int(y0 - 1000 * (a))
-        cv2.line(color, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            keypoints3[pos2].angle = an
+            keypoints3[pos2].pt = (int(x), int(y))
+            #Añado 1 al vector de votacion
+            if int(x)<int(width) and int(y)<int(height):
+                a[int(x)][int(y)] = a[int(x)][int(y)]+1
 
-plt.figure(figsize=(15, 15))
-plt.imshow(color)
-plt.show()
-
-    #frame = cv2.drawKeypoints(imagenes[h], mejores, np.array([]), (0, 0, 255), cv2.DRAW_MATCHES_FLAGS_DRAW_RICH_KEYPOINTS)
-    #cv2.imshow('frame', frame)
-    #cv2.waitKey(0)
+    #Saco del vector de votacion el numero mas alto y lo pinto como un cuadrado en la imagen de test
+    for z in range(1):
+        max1 = maximo(a, int(width), int(height))
+        a[max1[0]][max1[1]]=0
+        frame = cv2.drawMarker(img, max1, (0, 0, 0), cv2.MARKER_SQUARE, 20, 2, cv2.FILLED)
+    cv2.imshow('frame', frame)
+    cv2.waitKey(0)
